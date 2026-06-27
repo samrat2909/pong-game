@@ -118,11 +118,43 @@ class Paddle:
         # Draw glow
         glow_x = self.x - 20
         glow_y = self.y - 20
-        surface.blit(self.glow_surf, (glow_x, glow_y))
+        if self.hit_glow > 0:
+            # Bigger, brighter glow on hit
+            extra = self.hit_glow * 2
+            hit_glow_surf = pygame.Surface(
+                (self.width + 20 * 2 + extra, self.height + 20 * 2 + extra),
+                pygame.SRCALPHA,
+            )
+            hit_color = (255, 255, 255)
+            for i in range(20 + extra, 0, -2):
+                alpha = int(60 * (i / (20 + extra)))
+                pygame.draw.rect(
+                    hit_glow_surf,
+                    (hit_color[0], hit_color[1], hit_color[2], alpha),
+                    (20 + extra - i, 20 + extra - i,
+                     self.width + i * 2, self.height + i * 2),
+                    border_radius=PADDLE_ROUNDED + i // 2,
+                )
+            surface.blit(hit_glow_surf, (glow_x - extra // 2, glow_y - extra // 2))
+        else:
+            surface.blit(self.glow_surf, (glow_x, glow_y))
 
         # Draw paddle body
         color = COLOR_PADDLE_HIT if self.hit_glow > 5 else COLOR_PADDLE
         pygame.draw.rect(surface, color, self.rect, border_radius=PADDLE_ROUNDED)
+
+        # Draw a subtle edge highlight on the paddle face
+        if self.hit_glow <= 0:
+            highlight_rect = pygame.Rect(
+                self.x + 2, self.y + 4,
+                3, self.height - 8
+            )
+            pygame.draw.rect(
+                surface,
+                (100, 255, 255, 40),
+                highlight_rect,
+                border_radius=2,
+            )
 
     def reset(self, x=PADDLE_X, y=SCREEN_HEIGHT // 2 - PADDLE_HEIGHT // 2):
         self.x = x
@@ -297,15 +329,39 @@ class Ball:
         return False
 
     def draw_trail(self, surface):
-        """Draw the ball trail."""
+        """Draw the ball trail with improved glow effect."""
+        trail_len = len(self.trail)
+        if trail_len == 0:
+            return
+
         for i, (tx, ty) in enumerate(self.trail):
-            alpha = int(80 * (i / len(self.trail)))
+            progress = i / trail_len
+            alpha = int(60 + 40 * progress)
             radius = max(
                 TRAIL_MIN_RADIUS,
-                int(self.radius * (0.3 + 0.7 * (i / len(self.trail)))),
+                int(self.radius * (0.2 + 0.8 * progress)),
             )
+
             trail_surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-            color = COLOR_BALL_TRAIL
+
+            if self.powered_up:
+                # Cyan trail for powered-up ball
+                color = (0, 255, 255)
+                # Extra glow layers
+                for g in range(3, 0, -1):
+                    g_radius = radius + g * 2
+                    g_alpha = int(alpha * 0.2 / g)
+                    g_surf = pygame.Surface((g_radius * 2, g_radius * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(
+                        g_surf,
+                        (color[0], color[1], color[2], g_alpha),
+                        (g_radius, g_radius),
+                        g_radius,
+                    )
+                    surface.blit(g_surf, (int(tx - g_radius), int(ty - g_radius)))
+            else:
+                color = COLOR_BALL_TRAIL
+
             pygame.draw.circle(
                 trail_surf,
                 (color[0], color[1], color[2], alpha),
@@ -344,13 +400,21 @@ class Ball:
             cx, cy = int(self.x - self.radius - glow_size), int(self.y - self.radius - glow_size)
             surface.blit(glow_surf, (cx, cy))
 
-            # Draw ball in bright cyan
+            # Draw ball in bright cyan with white-hot center
             ball_color = (
                 int(0 + 200 * pulse),
                 255,
                 int(200 + 55 * pulse),
             )
             pygame.draw.circle(surface, ball_color, (int(self.x), int(self.y)), self.radius)
+
+            # White hot center
+            pygame.draw.circle(
+                surface,
+                (255, 255, 255),
+                (int(self.x), int(self.y)),
+                self.radius // 3,
+            )
 
             # Extra spark highlight
             spark_offset = self.radius // 3
@@ -366,6 +430,23 @@ class Ball:
                 spark_surf,
                 (int(self.x - self.radius // 2 - spark_offset), int(self.y - self.radius // 2 - spark_offset)),
             )
+
+            # Draw energy rings around the ball
+            for ring_i in range(2):
+                ring_radius = self.radius + 8 + ring_i * 6 + int(4 * pulse)
+                ring_alpha = int(60 + 60 * pulse - ring_i * 20)
+                ring_surf = pygame.Surface((ring_radius * 2, ring_radius * 2), pygame.SRCALPHA)
+                pygame.draw.circle(
+                    ring_surf,
+                    (0, 255, 255, ring_alpha),
+                    (ring_radius, ring_radius),
+                    ring_radius,
+                    width=2,
+                )
+                surface.blit(
+                    ring_surf,
+                    (int(self.x - ring_radius), int(self.y - ring_radius)),
+                )
         else:
             # Normal draw
             glow_x = self.x - self.radius - 30
@@ -377,11 +458,17 @@ class Ball:
 
             # Draw highlight (for 3D effect)
             highlight_offset = self.radius // 3
+            highlight_surf = pygame.Surface((self.radius, self.radius), pygame.SRCALPHA)
             pygame.draw.circle(
-                surface,
+                highlight_surf,
                 (255, 255, 255, 60),
-                (int(self.x - highlight_offset), int(self.y - highlight_offset)),
+                (self.radius // 2, self.radius // 2),
                 self.radius // 2,
+            )
+            surface.blit(
+                highlight_surf,
+                (int(self.x - self.radius // 2 - highlight_offset),
+                 int(self.y - self.radius // 2 - highlight_offset)),
             )
 
     def reset(self):

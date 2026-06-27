@@ -39,6 +39,12 @@ def main():
     """Initialize and run the game."""
     pygame.init()
 
+    # Initialize mixer for sound effects
+    try:
+        pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
+    except Exception:
+        pass  # Sound will be disabled if mixer fails
+
     # Set up the display
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption(GAME_TITLE)

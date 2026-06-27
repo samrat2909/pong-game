@@ -18,7 +18,10 @@ from constants import (
     COLOR_ORANGE,
     COLOR_RED,
     COLOR_TEXT,
+    COUNTDOWN_FRAMES,
+    COUNTDOWN_NUMBERS,
     DIFFICULTIES,
+    FLASH_DURATION,
     FONT_BODY,
     FONT_SCORE,
     FONT_SMALL,
@@ -34,6 +37,7 @@ from constants import (
     POWER_UP_SPEED_MULT,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
+    SOUND_VOLUME,
     STARTING_LIVES,
     STATE_GAME_OVER,
     STATE_HIGH_SCORES,
@@ -46,6 +50,7 @@ from constants import (
 
 from highscores import HighScoreManager
 from particles import ParticleSystem, ScreenShake, Starfield
+from sounds import SoundManager
 from sprites import Ball, Paddle
 
 
@@ -68,6 +73,12 @@ class Game:
         self.particles = ParticleSystem()
         self.starfield = Starfield()
         self.shake = ScreenShake()
+        self.sound = SoundManager()
+        self.sound.set_volume(SOUND_VOLUME)
+
+        # Screen flash
+        self.flash_color = None
+        self.flash_alpha = 0
 
         # Game state
         self.score = 0
@@ -94,11 +105,27 @@ class Game:
         # Input
         self.keys = {}
 
-        # Ball launch delay
+        # Countdown before serve
+        self.countdown_active = False
+        self.countdown_frame = 0
+        self.countdown_index = 0
+
+        # Ball launch delay (legacy)
         self.launch_timer = 0
 
         # Power-up system
         self.power_up_timer = random.randint(POWER_UP_INTERVAL_MIN, POWER_UP_INTERVAL_MAX)
+
+        # Match statistics
+        self.stats = {
+            "rallies": 0,
+            "longest_rally": 0,
+            "current_rally": 0,
+            "aces": 0,           # Ball past player before paddle touch
+            "player_hits": 0,
+            "ai_hits": 0,
+            "power_hits": 0,
+        }
 
         self._apply_difficulty()
         self.ball.launch(angle=random.uniform(math.pi * 2 / 3, math.pi * 4 / 3))
@@ -146,14 +173,19 @@ class Game:
 
     def _handle_menu_key(self, key):
         if key == pygame.K_RETURN or key == pygame.K_SPACE:
+            self.sound.play("menu_select")
             self.start_game()
         elif key == pygame.K_LEFT:
             self.difficulty_index = (self.difficulty_index - 1) % len(DIFFICULTIES)
+            self.sound.play("menu_select")
         elif key == pygame.K_RIGHT:
             self.difficulty_index = (self.difficulty_index + 1) % len(DIFFICULTIES)
+            self.sound.play("menu_select")
         elif key == pygame.K_h:
+            self.sound.play("menu_select")
             self.state = STATE_HIGH_SCORES
         elif key == pygame.K_ESCAPE:
+            self.sound.play("menu_select")
             self.running = False
 
     def _handle_playing_key(self, key):
@@ -189,6 +221,7 @@ class Game:
         # Check if click is on Start button
         btn_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, 280, 200, 50)
         if btn_rect.collidepoint(pos):
+            self.sound.play("menu_select")
             self.start_game()
             return
 
@@ -197,17 +230,20 @@ class Game:
             btn_rect = pygame.Rect(SCREEN_WIDTH // 2 - 120 + i * 120, 400, 100, 30)
             if btn_rect.collidepoint(pos):
                 self.difficulty_index = i
+                self.sound.play("menu_select")
                 return
 
         # High scores button
         hs_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, 470, 200, 50)
         if hs_rect.collidepoint(pos):
+            self.sound.play("menu_select")
             self.state = STATE_HIGH_SCORES
             return
 
         # Quit button
         quit_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, 535, 200, 50)
         if quit_rect.collidepoint(pos):
+            self.sound.play("menu_select")
             self.running = False
 
     def _handle_game_over_click(self, pos):
@@ -225,7 +261,7 @@ class Game:
         self.state = STATE_PLAYING
         self._apply_difficulty()
         self.reset_game(keep_difficulty=True)
-        self.ball.launch(angle=random.uniform(math.pi * 2 / 3, math.pi * 4 / 3))
+        self._start_countdown()
 
     def reset_game(self, keep_difficulty=False):
         """Reset all game state."""
@@ -236,11 +272,27 @@ class Game:
         self.combo_timer = 0
         self.flash_message = ""
         self.flash_timer = 0
+        self.flash_color = None
+        self.flash_alpha = 0
         self.score_popup = 0
         self.ai_score_popup = 0
         self.new_high_score = False
         self.launch_timer = 0
+        self.countdown_active = False
+        self.countdown_frame = 0
+        self.countdown_index = 0
         self.power_up_timer = random.randint(POWER_UP_INTERVAL_MIN, POWER_UP_INTERVAL_MAX)
+
+        # Reset match stats
+        self.stats = {
+            "rallies": 0,
+            "longest_rally": 0,
+            "current_rally": 0,
+            "aces": 0,
+            "player_hits": 0,
+            "ai_hits": 0,
+            "power_hits": 0,
+        }
 
         self.paddle.reset()
         self.paddle2.reset(x=SCREEN_WIDTH - PADDLE_X - PADDLE_WIDTH)
@@ -286,7 +338,12 @@ class Game:
         # AI paddle (right) - follows the ball
         self._update_ai()
 
-        # Ball launch delay
+        # Handle countdown
+        if self.countdown_active:
+            self._update_countdown()
+            return
+
+        # Ball launch delay (legacy, kept for safety)
         if self.launch_timer > 0:
             self.launch_timer -= 1
             return
@@ -303,12 +360,14 @@ class Game:
         # Check wall collisions
         wall_event = self.ball.check_wall_collision()
         if wall_event == "wall_top" or wall_event == "wall_bottom":
+            self.sound.play("wall_bounce")
             self.particles.emit_wall_hit(self.ball.x, self.ball.y)
         elif wall_event == "wall_right":
             # Player scores!
             self._on_player_score()
         elif wall_event == "wall_right_blocked":
             # Power-up blocked the goal — bounce back for a second chance
+            self.sound.play("wall_bounce")
             self.particles.emit_wall_hit(self.ball.x, self.ball.y)
             self.particles.emit(self.ball.x, self.ball.y, (0, 255, 255), count=15, speed_multiplier=1.5)
             self.flash_message = "BLOCKED!"
@@ -317,13 +376,20 @@ class Game:
 
         # Check player paddle collision (left side)
         if self.ball.check_paddle_collision(self.paddle):
+            self.sound.play("paddle_hit")
             self.paddle.on_hit()
             self.shake.trigger(intensity=4, duration=4)
             self.particles.emit_paddle_hit(self.ball.x, self.ball.y)
             self.combo += 1
             self.combo_timer = 30  # Reset combo timer
+            self.stats["player_hits"] += 1
+            self.stats["current_rally"] += 1
+
+            if self.combo > 1:
+                self.sound.play("combo")
 
             if self.ball.powered_up:
+                self.stats["power_hits"] += 1
                 self.score += POWER_UP_BONUS
                 self.flash_message = f"⚡ POWER HIT! +{POWER_UP_BONUS}"
                 self.flash_timer = 50
@@ -332,10 +398,14 @@ class Game:
 
         # Check AI paddle collision (right side)
         if self.ball.check_paddle2_collision(self.paddle2):
+            self.sound.play("paddle_hit")
             self.paddle2.on_hit()
             self.particles.emit_paddle_hit(self.ball.x, self.ball.y)
+            self.stats["ai_hits"] += 1
+            self.stats["current_rally"] += 1
 
             if self.ball.powered_up:
+                self.stats["power_hits"] += 1
                 self.ai_score += POWER_UP_BONUS
                 self.flash_message = f"⚡ AI POWER HIT! +{POWER_UP_BONUS}"
                 self.flash_timer = 50
@@ -353,6 +423,7 @@ class Game:
                 self.ball.x = self.ball.radius
                 self.ball.vx = abs(self.ball.vx)
                 self.ball.vy += random.uniform(-0.5, 0.5)  # Prevent horizontal dead zone
+                self.sound.play("wall_bounce")
                 self.particles.emit_wall_hit(self.ball.x, self.ball.y)
                 self.particles.emit(self.ball.x, self.ball.y, (0, 255, 255), count=15, speed_multiplier=1.5)
                 self.flash_message = "BLOCKED!"
@@ -417,9 +488,39 @@ class Game:
 
         self.paddle2.update(self.dt)
 
+    def _start_countdown(self):
+        """Start the serve countdown."""
+        self.countdown_active = True
+        self.countdown_frame = 0
+        self.countdown_index = 0
+        self.ball.reset()
+
+    def _update_countdown(self):
+        """Update countdown state."""
+        self.countdown_frame += 1
+        frames_per_number = COUNTDOWN_FRAMES // len(COUNTDOWN_NUMBERS)
+        new_index = min(self.countdown_frame // frames_per_number, len(COUNTDOWN_NUMBERS) - 1)
+
+        if new_index != self.countdown_index:
+            self.countdown_index = new_index
+            if COUNTDOWN_NUMBERS[self.countdown_index] == "GO!":
+                self.sound.play("go")
+            else:
+                self.sound.play("countdown")
+
+        if self.countdown_frame >= COUNTDOWN_FRAMES:
+            self.countdown_active = False
+            # Launch the ball
+            direction = 1 if random.random() < 0.5 else -1
+            if direction == 1:
+                self.ball.launch(angle=random.uniform(-math.pi / 3, math.pi / 3))
+            else:
+                self.ball.launch(angle=random.uniform(math.pi * 2 / 3, math.pi * 4 / 3))
+
     def _activate_power_up(self):
         """Activate the power-up — ball glows and speeds up."""
         self.ball.powered_up = True
+        self.sound.play("power_up")
         # Immediate speed boost
         self.ball.vx *= POWER_UP_SPEED_MULT
         self.ball.vy *= POWER_UP_SPEED_MULT
@@ -446,7 +547,15 @@ class Game:
         """Handle player scoring."""
         self.score += 1
         self.score_popup = 20
+        self.sound.play("score")
+        self._trigger_flash(COLOR_ACCENT)
         self.particles.emit_score(SCREEN_WIDTH - 100, SCREEN_HEIGHT // 2)
+
+        # Track rally stats
+        self.stats["rallies"] += 1
+        if self.stats["current_rally"] > self.stats["longest_rally"]:
+            self.stats["longest_rally"] = self.stats["current_rally"]
+        self.stats["current_rally"] = 0
 
         # Check win
         if self.score >= self.max_score:
@@ -456,11 +565,8 @@ class Game:
         # Deactivate power-up and reset timer
         self._deactivate_power_up()
 
-        # Reset ball
-        self.ball.reset()
-        self.launch_timer = 30
-        # Launch toward AI
-        self.ball.launch(angle=random.uniform(-math.pi / 3, math.pi / 3))
+        # Start countdown for next serve
+        self._start_countdown()
 
         # Flash message
         self.flash_message = f"Point! ({self.score})"
@@ -471,8 +577,16 @@ class Game:
         self.lives -= 1
         self.ai_score += 1
         self.ai_score_popup = 20
+        self.sound.play("life_lost")
+        self._trigger_flash(COLOR_RED)
         self.particles.emit_lost_ball(0, self.ball.y)
         self.shake.trigger(intensity=8, duration=6)
+
+        # Track rally stats
+        self.stats["rallies"] += 1
+        if self.stats["current_rally"] > self.stats["longest_rally"]:
+            self.stats["longest_rally"] = self.stats["current_rally"]
+        self.stats["current_rally"] = 0
 
         if self.lives <= 0:
             self._on_game_over(victory=False)
@@ -481,28 +595,38 @@ class Game:
         # Deactivate power-up and reset timer
         self._deactivate_power_up()
 
-        # Reset ball
-        self.ball.reset()
-        self.launch_timer = 30
-        # Launch toward player
-        self.ball.launch(angle=random.uniform(math.pi * 2 / 3, math.pi * 4 / 3))
+        # Start countdown for next serve
+        self._start_countdown()
 
         self.flash_message = f"Life lost! ({self.lives} remaining)"
         self.flash_timer = 60
+
+    def _trigger_flash(self, color):
+        """Trigger a screen flash effect."""
+        self.flash_color = color
+        self.flash_alpha = 120
 
     def _on_game_over(self, victory=False):
         """Handle game over state."""
         self.state = STATE_GAME_OVER
         if victory:
+            self.sound.play("victory")
             self.flash_message = "VICTORY!"
+            self._trigger_flash(COLOR_GREEN)
             # Big celebration particles
-            for _ in range(3):
+            for _ in range(5):
                 self.particles.emit_score(
                     random.randint(200, SCREEN_WIDTH - 200),
                     random.randint(100, SCREEN_HEIGHT - 100),
                 )
+                self.particles.emit_confetti(
+                    random.randint(100, SCREEN_WIDTH - 100),
+                    random.randint(50, SCREEN_HEIGHT - 50),
+                )
         else:
+            self.sound.play("game_over")
             self.flash_message = "GAME OVER"
+            self._trigger_flash(COLOR_RED)
             self.particles.emit_lost_ball(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 
         # Check high score
@@ -553,6 +677,8 @@ class Game:
         elif self.state == STATE_PLAYING:
             self._draw_game(shake_offset)
             self._draw_hud()
+            if self.countdown_active:
+                self._draw_countdown()
         elif self.state == STATE_PAUSED:
             self._draw_game(shake_offset)
             self._draw_hud()
@@ -564,10 +690,69 @@ class Game:
         elif self.state == STATE_HIGH_SCORES:
             self._draw_high_scores()
 
+        # Draw screen flash overlay
+        self._draw_flash()
+
         # Draw particles on top of everything
         self.particles.draw(self.screen, shake_offset)
 
         pygame.display.flip()
+
+    def _draw_flash(self):
+        """Draw screen flash overlay."""
+        if self.flash_color and self.flash_alpha > 0:
+            flash_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            flash_surf.fill((*self.flash_color[:3], int(self.flash_alpha)))
+            self.screen.blit(flash_surf, (0, 0))
+            self.flash_alpha = max(0, self.flash_alpha - (120 // FLASH_DURATION))
+            if self.flash_alpha <= 0:
+                self.flash_color = None
+
+    def _draw_countdown(self):
+        """Draw the serve countdown animation."""
+        total_frames = COUNTDOWN_FRAMES
+        frames_per_number = total_frames // len(COUNTDOWN_NUMBERS)
+        idx = min(self.countdown_frame // frames_per_number, len(COUNTDOWN_NUMBERS) - 1)
+        number_text = COUNTDOWN_NUMBERS[idx]
+
+        # Calculate pulse scale
+        progress_in_step = (self.countdown_frame % frames_per_number) / frames_per_number
+        # Scale: start big, shrink to normal
+        if number_text == "GO!":
+            scale = 0.8 + 0.3 * (1 - progress_in_step)
+            color = COLOR_GREEN
+        else:
+            scale = 1.0 + 1.5 * (1 - progress_in_step) * 0.5
+            color = COLOR_ACCENT2
+
+        # Fade out near the end of each step
+        fade = 1.0 if progress_in_step < 0.7 else (1.0 - (progress_in_step - 0.7) / 0.3)
+
+        # Render the number
+        font_size = int(120 * scale)
+        try:
+            font = pygame.font.SysFont("segoeui", font_size, bold=True)
+        except Exception:
+            font = pygame.font.Font(None, font_size)
+
+        text = font.render(number_text, True, color)
+        text.set_alpha(int(255 * fade))
+
+        # Draw shadow
+        shadow = font.render(number_text, True, (0, 0, 0))
+        shadow.set_alpha(int(100 * fade))
+        self.screen.blit(
+            shadow,
+            (SCREEN_WIDTH // 2 - text.get_width() // 2 + 4,
+             SCREEN_HEIGHT // 2 - text.get_height() // 2 + 4),
+        )
+
+        # Main text
+        self.screen.blit(
+            text,
+            (SCREEN_WIDTH // 2 - text.get_width() // 2,
+             SCREEN_HEIGHT // 2 - text.get_height() // 2),
+        )
 
     def _draw_game(self, shake_offset=(0, 0)):
         """Draw game objects."""
@@ -618,9 +803,17 @@ class Game:
                 (SCREEN_WIDTH // 2 - power_label.get_width() // 2, 140),
             )
 
-        # Lives
-        lives_text = "♥" * self.lives
-        lives_render = FONT_BODY.render(lives_text, True, COLOR_RED)
+        # Lives with pulsing heart
+        if self.lives <= 1 and self.state == STATE_PLAYING:
+            # Pulse when on last life
+            pulse = abs(math.sin(pygame.time.get_ticks() * 0.006))
+            heart_color = (255, int(50 + 100 * pulse), int(50 + 100 * pulse))
+            lives_text = "♥" * self.lives
+            lives_render = FONT_BODY.render(lives_text, True, heart_color)
+            lives_render.set_alpha(int(180 + 75 * pulse))
+        else:
+            lives_text = "♥" * self.lives
+            lives_render = FONT_BODY.render(lives_text, True, COLOR_RED)
         self.screen.blit(lives_render, (20, SCREEN_HEIGHT - 40))
 
         # Combo display
@@ -770,8 +963,8 @@ class Game:
             (SCREEN_WIDTH // 2 - over_render.get_width() // 2, 150),
         )
 
-        # Score summary
-        score_text = FONT_SCORE.render(f"Score: {self.score}", True, COLOR_ACCENT)
+        # Score summary with win/loss display
+        score_text = FONT_SCORE.render(f"{self.score} - {self.ai_score}", True, COLOR_ACCENT)
         self.screen.blit(
             score_text,
             (SCREEN_WIDTH // 2 - score_text.get_width() // 2, 240),
@@ -794,9 +987,28 @@ class Game:
                 (SCREEN_WIDTH // 2 - hs_text.get_width() // 2, 350),
             )
 
+        # Match statistics
+        stats_y = 360
+        if not self.new_high_score:
+            stats_y = 340
+
+        stats_lines = [
+            f"Rallies: {self.stats['rallies']}",
+            f"Longest Rally: {self.stats['longest_rally']} hits",
+            f"Player Hits: {self.stats['player_hits']}",
+        ]
+        for i, line in enumerate(stats_lines):
+            stat_render = FONT_SMALL.render(line, True, COLOR_TEXT)
+            stat_render.set_alpha(160)
+            self.screen.blit(
+                stat_render,
+                (SCREEN_WIDTH // 2 - stat_render.get_width() // 2, stats_y + i * 28),
+            )
+
         # Buttons
-        self._draw_menu_button("PLAY AGAIN", SCREEN_WIDTH // 2 - 100, 450, 200, 50, COLOR_GREEN)
-        self._draw_menu_button("MAIN MENU", SCREEN_WIDTH // 2 - 100, 520, 200, 50, COLOR_ACCENT2)
+        button_y = stats_y + len(stats_lines) * 28 + 30
+        self._draw_menu_button("PLAY AGAIN", SCREEN_WIDTH // 2 - 100, button_y, 200, 50, COLOR_GREEN)
+        self._draw_menu_button("MAIN MENU", SCREEN_WIDTH // 2 - 100, button_y + 70, 200, 50, COLOR_ACCENT2)
 
     def _draw_high_scores(self):
         """Draw the high scores screen."""

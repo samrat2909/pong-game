@@ -97,6 +97,24 @@ class ParticleSystem:
         self.emit(x, y, (255, 50, 50), count=30, speed_multiplier=3.0)
         self.emit(x, y, (255, 100, 100), count=15, speed_multiplier=2.0)
 
+    def emit_confetti(self, x, y):
+        """Emit confetti burst for celebrations."""
+        colors = [
+            (255, 215, 0),   # Gold
+            (255, 50, 50),    # Red
+            (0, 255, 120),    # Green
+            (0, 245, 255),    # Cyan
+            (255, 107, 53),   # Orange
+            (255, 0, 255),    # Magenta
+            (100, 100, 255),  # Blue
+        ]
+        for _ in range(40):
+            color = random.choice(colors)
+            p = Particle(x, y, color, speed_multiplier=2.5)
+            # Make confetti particles larger and slower rotating
+            p.size = random.uniform(3, 6)
+            self.particles.append(p)
+
     def update(self):
         self.particles = [p for p in self.particles if p.alive]
         for p in self.particles:

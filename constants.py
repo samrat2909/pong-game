@@ -92,6 +92,10 @@ POWER_UP_INTERVAL_MIN = 240        # Min frames between power-ups (4s at 60fps)
 POWER_UP_INTERVAL_MAX = 600        # Max frames between power-ups (10s at 60fps)
 POWER_UP_BONUS = 2                 # Extra points for hitting powered-up ball
 
+# ─── Sound ──────────────────────────────────────────────────────────────────
+SOUND_ENABLED = True
+SOUND_VOLUME = 0.5
+
 # ─── Difficulty presets ─────────────────────────────────────────────────────
 DIFFICULTY_EASY = {
     "name": "Easy",
@@ -119,6 +123,16 @@ DIFFICULTY_HARD = {
 }
 
 DIFFICULTIES = [DIFFICULTY_EASY, DIFFICULTY_MEDIUM, DIFFICULTY_HARD]
+
+# ─── Countdown ─────────────────────────────────────────────────────────────
+COUNTDOWN_FRAMES = 90  # 1.5 seconds at 60fps
+COUNTDOWN_NUMBERS = ["3", "2", "1", "GO!"]
+
+# ─── Screen Flash ───────────────────────────────────────────────────────────
+FLASH_DURATION = 8       # Frames
+
+# ─── Match Stats ────────────────────────────────────────────────────────────
+STATS_MAX_RALLIES = 100   # Rolling window for tracking
 
 # ─── High Scores ────────────────────────────────────────────────────────────
 HIGH_SCORES_FILE = "highscores.json"
