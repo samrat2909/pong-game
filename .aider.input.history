@@ -1,0 +1,67 @@
+
+# 2026-06-22 05:58:11.286809
++/chat-mode
+
+# 2026-06-22 05:58:25.014112
++- code
+
+# 2026-06-22 05:59:02.035970
++/exit
+
+# 2026-06-22 05:59:38.828100
++d
+
+# 2026-06-22 05:59:41.852252
++/chat-mode code
+
+# 2026-06-22 06:00:11.542460
++/init
+
+# 2026-06-22 06:01:03.183809
++/add 
+
+# 2026-06-22 06:01:11.576459
++Analyze the entire codebase and build a complete understanding of the project before making any changes.
++
++Your tasks:
++
++1. Examine all files currently added to the chat.
++2. Determine the purpose of the project and how the files interact.
++3. Identify the entry point(s) of the application.
++4. Explain the architecture, major classes, functions, modules, and data flow.
++5. List any bugs, code smells, performance issues, or incomplete features you find.
++6. Identify dependencies and external libraries being used.
++7. Before modifying any code, provide a concise summary of your understanding of the project.
++8. When making changes, preserve existing functionality unless explicitly instructed otherwise.
++9. Follow the existing coding style and file organization.
++10. If any requirement is ambiguous, ask for clarification before editing.
++
++After your analysis, wait for further instructions and do not make code changes automatically.
++
+
+# 2026-06-22 06:01:37.455290
++/model
+
+# 2026-06-22 06:02:03.021576
++/exit
+
+# 2026-06-22 06:02:20.556895
++hello
+
+# 2026-06-22 06:02:27.664838
++/exit
+
+# 2026-06-22 06:02:45.051127
++hello
+
+# 2026-06-22 06:11:55.208717
++/ls
+
+# 2026-06-22 06:12:09.486681
++/add .
+
+# 2026-06-22 06:12:15.394502
++n
+
+# 2026-06-22 06:13:10.602855
++/ls
