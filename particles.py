@@ -11,6 +11,7 @@ import pygame
 from constants import (
     COLOR_BALL,
     COLOR_PADDLE,
+    COMBO_PARTICLE_BURST,
     PARTICLE_COUNT,
     PARTICLE_LIFETIME,
     PARTICLE_MAX_SPEED,
@@ -111,9 +112,15 @@ class ParticleSystem:
         for _ in range(40):
             color = random.choice(colors)
             p = Particle(x, y, color, speed_multiplier=2.5)
-            # Make confetti particles larger and slower rotating
             p.size = random.uniform(3, 6)
             self.particles.append(p)
+
+    def emit_combo(self, x, y, combo_count):
+        """Emit celebratory burst for combo hits."""
+        intensity = min(combo_count, 5)
+        count = COMBO_PARTICLE_BURST * intensity
+        self.emit(x, y, (255, 165, 0), count=count, speed_multiplier=1.5 + intensity * 0.3)
+        self.emit(x, y, (255, 255, 255), count=count // 2, speed_multiplier=2.0)
 
     def update(self):
         self.particles = [p for p in self.particles if p.alive]

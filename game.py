@@ -18,6 +18,7 @@ from constants import (
     COLOR_ORANGE,
     COLOR_RED,
     COLOR_TEXT,
+    COUNTDOWN_FONT_SIZE,
     COUNTDOWN_FRAMES,
     COUNTDOWN_NUMBERS,
     DIFFICULTIES,
@@ -28,6 +29,8 @@ from constants import (
     FONT_SUBTITLE,
     FONT_TITLE,
     FPS,
+    MENU_BALL_RADIUS,
+    MENU_BALL_SPEED,
     PADDLE_HEIGHT,
     PADDLE_WIDTH,
     PADDLE_X,
@@ -54,6 +57,40 @@ from sounds import SoundManager
 from sprites import Ball, Paddle
 
 
+class MenuBall:
+    """Decorative bouncing ball for the menu screen."""
+    def __init__(self):
+        self.x = SCREEN_WIDTH // 2
+        self.y = SCREEN_HEIGHT // 2
+        self.vx = MENU_BALL_SPEED * random.choice([-1, 1])
+        self.vy = MENU_BALL_SPEED * random.uniform(-0.8, 0.8)
+        self.radius = MENU_BALL_RADIUS
+        self.trail = []
+        self.color = (0, 245, 255)
+
+    def update(self):
+        self.trail.append((int(self.x), int(self.y)))
+        if len(self.trail) > 25:
+            self.trail.pop(0)
+        self.x += self.vx
+        self.y += self.vy
+        if self.x - self.radius <= 0 or self.x + self.radius >= SCREEN_WIDTH:
+            self.vx = -self.vx
+            self.x = max(self.radius, min(self.x, SCREEN_WIDTH - self.radius))
+        if self.y - self.radius <= 0 or self.y + self.radius >= SCREEN_HEIGHT:
+            self.vy = -self.vy
+            self.y = max(self.radius, min(self.y, SCREEN_HEIGHT - self.radius))
+
+    def draw(self, surface):
+        for i, (tx, ty) in enumerate(self.trail):
+            progress = i / len(self.trail)
+            brightness = int(40 + 215 * progress)
+            color = (0, brightness, brightness)
+            pygame.draw.circle(surface, color, (tx, ty), max(1, int(self.radius * progress)))
+        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), self.radius)
+        pygame.draw.circle(surface, (100, 255, 255), (int(self.x), int(self.y)), self.radius - 2)
+
+
 class Game:
     """Main game class that manages states, updates, and rendering."""
 
@@ -75,6 +112,18 @@ class Game:
         self.shake = ScreenShake()
         self.sound = SoundManager()
         self.sound.set_volume(SOUND_VOLUME)
+
+        # Menu decoration
+        self.menu_ball = MenuBall()
+
+        # AI smoothing target
+        self._ai_target_y = SCREEN_HEIGHT // 2
+
+        # Cached countdown font (avoids re-creating SysFont every frame)
+        try:
+            self._countdown_font = pygame.font.SysFont("segoeui", COUNTDOWN_FONT_SIZE, bold=True)
+        except Exception:
+            self._countdown_font = pygame.font.Font(None, COUNTDOWN_FONT_SIZE)
 
         # Screen flash
         self.flash_color = None
@@ -247,11 +296,13 @@ class Game:
             self.running = False
 
     def _handle_game_over_click(self, pos):
-        restart_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, 450, 200, 50)
+        stats_y = 360 if self.new_high_score else 340
+        button_y = stats_y + 3 * 28 + 30
+        restart_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, button_y, 200, 50)
         if restart_rect.collidepoint(pos):
             self.start_game()
 
-        menu_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, 520, 200, 50)
+        menu_rect = pygame.Rect(SCREEN_WIDTH // 2 - 100, button_y + 75, 200, 50)
         if menu_rect.collidepoint(pos):
             self.state = STATE_MENU
             self.reset_game()
@@ -311,7 +362,9 @@ class Game:
         # Always update starfield
         self.starfield.update(self.dt)
 
-        if self.state == STATE_PLAYING:
+        if self.state == STATE_MENU:
+            self.menu_ball.update()
+        elif self.state == STATE_PLAYING:
             self._update_playing()
         elif self.state == STATE_GAME_OVER:
             self._update_game_over()
@@ -319,6 +372,12 @@ class Game:
         # Always update particles
         self.particles.update()
         self.shake.update()
+
+        # Score popup timers
+        if self.score_popup > 0:
+            self.score_popup -= 1
+        if self.ai_score_popup > 0:
+            self.ai_score_popup -= 1
 
     def _update_playing(self):
         """Update game logic while playing."""
@@ -387,6 +446,7 @@ class Game:
 
             if self.combo > 1:
                 self.sound.play("combo")
+                self.particles.emit_combo(self.ball.x, self.ball.y, self.combo)
 
             if self.ball.powered_up:
                 self.stats["power_hits"] += 1
@@ -466,9 +526,6 @@ class Game:
             target_y = ball.y
 
         # Smoothly lag the AI's target (natural reaction delay)
-        if not hasattr(self, '_ai_target_y'):
-            self._ai_target_y = target_y
-
         # Lag factor: Hard=0.95 (fast tracking), Easy=0.6 (slow/lazy)
         lag_factor = 0.5 + self.difficulty_index * 0.2
         self._ai_target_y += (target_y - self._ai_target_y) * lag_factor
@@ -613,8 +670,10 @@ class Game:
             self.sound.play("victory")
             self.flash_message = "VICTORY!"
             self._trigger_flash(COLOR_GREEN)
+            self.flash_timer = 90
+            self.shake.trigger(intensity=10, duration=20)
             # Big celebration particles
-            for _ in range(5):
+            for _ in range(8):
                 self.particles.emit_score(
                     random.randint(200, SCREEN_WIDTH - 200),
                     random.randint(100, SCREEN_HEIGHT - 100),
@@ -627,7 +686,14 @@ class Game:
             self.sound.play("game_over")
             self.flash_message = "GAME OVER"
             self._trigger_flash(COLOR_RED)
+            self.shake.trigger(intensity=12, duration=12)
             self.particles.emit_lost_ball(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+            # Extra dramatic particles
+            for _ in range(3):
+                self.particles.emit_lost_ball(
+                    random.randint(100, SCREEN_WIDTH - 100),
+                    random.randint(100, SCREEN_HEIGHT - 100),
+                )
 
         # Check high score
         diff_name = DIFFICULTIES[self.difficulty_index]["name"]
@@ -673,6 +739,7 @@ class Game:
         self._draw_center_line(self.screen)
 
         if self.state == STATE_MENU:
+            self.menu_ball.draw(self.screen)
             self._draw_menu()
         elif self.state == STATE_PLAYING:
             self._draw_game(shake_offset)
@@ -728,26 +795,28 @@ class Game:
         # Fade out near the end of each step
         fade = 1.0 if progress_in_step < 0.7 else (1.0 - (progress_in_step - 0.7) / 0.3)
 
-        # Render the number
-        font_size = int(120 * scale)
-        try:
-            font = pygame.font.SysFont("segoeui", font_size, bold=True)
-        except Exception:
-            font = pygame.font.Font(None, font_size)
+        # Render number using cached font, scale for animation
+        base_text = self._countdown_font.render(number_text, True, color)
+        base_shadow = self._countdown_font.render(number_text, True, (0, 0, 0))
 
-        text = font.render(number_text, True, color)
+        scaled_w = int(base_text.get_width() * scale)
+        scaled_h = int(base_text.get_height() * scale)
+        if scaled_w > 0 and scaled_h > 0:
+            text = pygame.transform.scale(base_text, (scaled_w, scaled_h))
+            shadow = pygame.transform.scale(base_shadow, (scaled_w, scaled_h))
+        else:
+            text = base_text
+            shadow = base_shadow
+
         text.set_alpha(int(255 * fade))
-
-        # Draw shadow
-        shadow = font.render(number_text, True, (0, 0, 0))
         shadow.set_alpha(int(100 * fade))
+
         self.screen.blit(
             shadow,
             (SCREEN_WIDTH // 2 - text.get_width() // 2 + 4,
              SCREEN_HEIGHT // 2 - text.get_height() // 2 + 4),
         )
 
-        # Main text
         self.screen.blit(
             text,
             (SCREEN_WIDTH // 2 - text.get_width() // 2,
@@ -815,6 +884,35 @@ class Game:
             lives_text = "♥" * self.lives
             lives_render = FONT_BODY.render(lives_text, True, COLOR_RED)
         self.screen.blit(lives_render, (20, SCREEN_HEIGHT - 40))
+
+        # Score popups (floating +1 animation)
+        if self.score_popup > 0:
+            popup_alpha = int(255 * (self.score_popup / 20))
+            popup_y_offset = int(30 * (1 - self.score_popup / 20))
+            popup_text = FONT_SUBTITLE.render("+1", True, COLOR_GREEN)
+            popup_text.set_alpha(popup_alpha)
+            self.screen.blit(
+                popup_text,
+                (player_x + 40, 25 - popup_y_offset),
+            )
+        if self.ai_score_popup > 0:
+            popup_alpha = int(255 * (self.ai_score_popup / 20))
+            popup_y_offset = int(30 * (1 - self.ai_score_popup / 20))
+            popup_text = FONT_SUBTITLE.render("+1", True, COLOR_RED)
+            popup_text.set_alpha(popup_alpha)
+            self.screen.blit(
+                popup_text,
+                (ai_x + 40, 25 - popup_y_offset),
+            )
+
+        # Rally counter
+        if self.state == STATE_PLAYING and self.stats["current_rally"] > 1:
+            rally_render = FONT_SMALL.render(f"Rally: {self.stats['current_rally']}", True, COLOR_TEXT)
+            rally_render.set_alpha(120)
+            self.screen.blit(
+                rally_render,
+                (SCREEN_WIDTH // 2 - rally_render.get_width() // 2, 180),
+            )
 
         # Combo display
         if self.combo > 1 and self.combo_timer > 0:
@@ -953,17 +1051,31 @@ class Game:
         overlay.fill((0, 0, 0, 180))
         self.screen.blit(overlay, (0, 0))
 
-        # Title
         is_victory = self.score >= self.max_score
         title_color = COLOR_GREEN if is_victory else COLOR_RED
         title_text = "VICTORY!" if is_victory else "GAME OVER"
-        over_render = FONT_TITLE.render(title_text, True, title_color)
+
+        # Title with pulsing glow
+        pulse = abs(math.sin(pygame.time.get_ticks() * 0.004))
+        title_render = FONT_TITLE.render(title_text, True, title_color)
+
+        # Glow effect for title
+        for glow_i in range(3, 0, -1):
+            glow_alpha = int(40 * pulse / glow_i)
+            glow_surf = FONT_TITLE.render(title_text, True, title_color)
+            glow_surf.set_alpha(glow_alpha)
+            self.screen.blit(
+                glow_surf,
+                (SCREEN_WIDTH // 2 - glow_surf.get_width() // 2 + glow_i * 2,
+                 150 - glow_i * 2),
+            )
+
         self.screen.blit(
-            over_render,
-            (SCREEN_WIDTH // 2 - over_render.get_width() // 2, 150),
+            title_render,
+            (SCREEN_WIDTH // 2 - title_render.get_width() // 2, 150),
         )
 
-        # Score summary with win/loss display
+        # Score summary
         score_text = FONT_SCORE.render(f"{self.score} - {self.ai_score}", True, COLOR_ACCENT)
         self.screen.blit(
             score_text,
@@ -978,10 +1090,15 @@ class Game:
 
         # High score notification
         if self.new_high_score:
+            hs_pulse = abs(math.sin(pygame.time.get_ticks() * 0.005))
             hs_text = FONT_BODY.render("★ NEW HIGH SCORE! ★", True, COLOR_ACCENT)
-            # Pulsing effect
-            pulse = abs(math.sin(pygame.time.get_ticks() * 0.005))
-            hs_text.set_alpha(int(150 + 105 * pulse))
+            hs_text.set_alpha(int(150 + 105 * hs_pulse))
+
+            # Star sparkles around the text
+            sparkle_x = SCREEN_WIDTH // 2 - hs_text.get_width() // 2 + hs_pulse * hs_text.get_width()
+            sparkle_y = 350 + 5 * math.sin(pygame.time.get_ticks() * 0.01)
+            self.particles.emit(int(sparkle_x), int(sparkle_y), COLOR_ACCENT, count=1, speed_multiplier=0.5)
+
             self.screen.blit(
                 hs_text,
                 (SCREEN_WIDTH // 2 - hs_text.get_width() // 2, 350),
@@ -1005,10 +1122,17 @@ class Game:
                 (SCREEN_WIDTH // 2 - stat_render.get_width() // 2, stats_y + i * 28),
             )
 
-        # Buttons
+        # Buttons with keyboard hints
         button_y = stats_y + len(stats_lines) * 28 + 30
         self._draw_menu_button("PLAY AGAIN", SCREEN_WIDTH // 2 - 100, button_y, 200, 50, COLOR_GREEN)
-        self._draw_menu_button("MAIN MENU", SCREEN_WIDTH // 2 - 100, button_y + 70, 200, 50, COLOR_ACCENT2)
+        hint1 = FONT_SMALL.render("[ Enter / Space ]", True, COLOR_TEXT)
+        hint1.set_alpha(100)
+        self.screen.blit(hint1, (SCREEN_WIDTH // 2 - hint1.get_width() // 2, button_y + 55))
+
+        self._draw_menu_button("MAIN MENU", SCREEN_WIDTH // 2 - 100, button_y + 75, 200, 50, COLOR_ACCENT2)
+        hint2 = FONT_SMALL.render("[ Escape ]", True, COLOR_TEXT)
+        hint2.set_alpha(100)
+        self.screen.blit(hint2, (SCREEN_WIDTH // 2 - hint2.get_width() // 2, button_y + 130))
 
     def _draw_high_scores(self):
         """Draw the high scores screen."""

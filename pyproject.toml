@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "pong-strike"
+version = "1.0.0"
+description = "A modern, polished take on the classic Pong game"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = ["pygame>=2.0.0"]
+
+[project.scripts]
+pong-strike = "main:main"

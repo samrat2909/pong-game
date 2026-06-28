@@ -127,6 +127,14 @@ DIFFICULTIES = [DIFFICULTY_EASY, DIFFICULTY_MEDIUM, DIFFICULTY_HARD]
 # ─── Countdown ─────────────────────────────────────────────────────────────
 COUNTDOWN_FRAMES = 90  # 1.5 seconds at 60fps
 COUNTDOWN_NUMBERS = ["3", "2", "1", "GO!"]
+COUNTDOWN_FONT_SIZE = 120
+
+# ─── Combo ──────────────────────────────────────────────────────────────────
+COMBO_PARTICLE_BURST = 15
+
+# ─── Menu Ball ──────────────────────────────────────────────────────────────
+MENU_BALL_RADIUS = 8
+MENU_BALL_SPEED = 3.0
 
 # ─── Screen Flash ───────────────────────────────────────────────────────────
 FLASH_DURATION = 8       # Frames

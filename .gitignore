@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+highscores.json
+*.egg-info/
+dist/
+build/

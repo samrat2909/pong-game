@@ -55,12 +55,13 @@ def _sweep(start_freq, end_freq, t, duration):
 # ─── Sound generators ───────────────────────────────────────────────────────
 
 def _gen_paddle_hit():
-    """Short sharp hit sound."""
+    """Short sharp hit sound with punch."""
     def wave(t):
-        freq = 300 + t * 2000  # Quick sweep up
-        env = max(0, 1 - t / 0.1)  # Fast decay
-        return math.sin(2 * math.pi * freq * t) * env
-    return _create_sound(wave, 0.1, volume=0.25)
+        freq = 400 + t * 3000
+        env = max(0, 1 - t / 0.12)
+        harmonic = 0.4 * math.sin(2 * math.pi * freq * 2.01 * t)
+        return (math.sin(2 * math.pi * freq * t) + harmonic) * env
+    return _create_sound(wave, 0.12, volume=0.3)
 
 
 def _gen_wall_bounce():
