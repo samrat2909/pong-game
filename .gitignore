@@ -4,3 +4,6 @@ highscores.json
 *.egg-info/
 dist/
 build/
+requirements.txt
+README.md
+AGENTS.md
