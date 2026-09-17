@@ -62,3 +62,6 @@ pong-strike/
 ## License
 
 Brought to you by Samrat
+
+
+PS. This game is majorly made by AI and not me i only made a few modifications where AI had done some mistakes.
